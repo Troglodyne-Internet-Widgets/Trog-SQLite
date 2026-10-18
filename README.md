@@ -137,6 +137,15 @@ large `@values` into batches that fit in memory.
 Dies if `$action` is not one of those, if `@keys` is empty, or if the number
 of values is not a multiple of the number of keys.
 
+# BUGS
+
+Please report any bugs or feature requests on the bugtracker website
+[https://github.com/Troglodyne-Internet-Widgets/Trog-SQLite/issues](https://github.com/Troglodyne-Internet-Widgets/Trog-SQLite/issues)
+
+When submitting a bug or request, please include a test-file or a
+patch to an existing test-file that illustrates the bug or desired
+feature.
+
 # AUTHORS
 
 Current Maintainers:
