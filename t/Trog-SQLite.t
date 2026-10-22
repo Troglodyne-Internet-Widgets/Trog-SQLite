@@ -110,16 +110,15 @@ subtest 'dbh: a lock that outlasts the busy timeout is an error' => sub {
 subtest 'dbh: an error other than a lock is not tried again' => sub {
     Trog::SQLite::forget();
     my ( undef, $file ) = schema_dir($V0);
-    my $setup = DBI->connect( "dbi:SQLite:dbname=$file", q{}, q{}, { RaiseError => 1, PrintError => 0 } );
-    $setup->do($V0);
-    $setup->disconnect();
-    chmod( 0444, $file ) or die "chmod $file: $!";
+
+    # Not a read-only file, because root writes one anyway.
+    File::Slurper::Temp::write_text( $file, 'not a database ' x 100 );
 
     my $start = Time::HiRes::time();
     my $db    = eval { Trog::SQLite::dbh( undef, $file ) };
     my $error = $@;
-    is( $db, undef, 'dbh refuses a file that it cannot write' );
-    like( $error, qr/readonly/, 'and says why' );
+    is( $db, undef, 'dbh refuses a file that is not a database' );
+    like( $error, qr/not[ ]a[ ]database/, 'and says why' );
     cmp_ok( Time::HiRes::time() - $start, '<', 1, 'at once, not after the busy timeout' );
 };
 
