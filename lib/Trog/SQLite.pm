@@ -11,12 +11,13 @@ use DBI();
 
 # Named so that a missing driver fails here and not inside DBI->connect.
 use DBD::SQLite();    ## no critic (ProhibitUnusedImports)
-use DBD::SQLite::Constants qw{SQLITE_LIMIT_VARIABLE_NUMBER};
+use DBD::SQLite::Constants qw{SQLITE_BUSY SQLITE_LIMIT_VARIABLE_NUMBER};
 use File::Basename();
 use File::Find();
 use File::Slurper();
 use List::Util qw{any};
 use POSIX      qw{floor};
+use Sub::Retry qw{retry};
 
 =head1 SYNOPSIS
 
@@ -84,7 +85,8 @@ The handle has C<RaiseError> on, and these pragmas:
 for a lock rather than failing at once with C<database is locked>.
 
 =item * C<journal_mode = WAL> and C<synchronous = NORMAL>, so that readers do
-not block a writer.
+not block a writer.  SQLite does not wait for a lock to change the journal
+mode, so C<wal> tries again for as long as C<busy_timeout> waits.
 
 =item * C<foreign_keys = ON>, set after the updates.
 
@@ -101,6 +103,11 @@ fork, so a forked child calls C<forget> before it calls this.
 # The handle cache, keyed by database file.  A forked child inherits it.
 my $handles = {};
 
+# How long a statement waits for a lock, in milliseconds, and how long wal
+# waits between its tries, in seconds.
+our $BUSY_TIMEOUT = 5000;
+our $WAL_DELAY    = 0.05;
+
 sub dbh {
     my ( $schema, $dbname ) = @_;
     return $handles->{$dbname} if $handles->{$dbname};
@@ -110,8 +117,8 @@ sub dbh {
 
     # Before the schema, because a second process that opens a new database at
     # the same time must wait for the updates of the first one.
-    $db->do('PRAGMA busy_timeout = 5000');
-    $db->do('PRAGMA journal_mode = WAL');
+    $db->do("PRAGMA busy_timeout = $BUSY_TIMEOUT");
+    wal($db);
     $db->do('PRAGMA synchronous = NORMAL');
 
     if ($schema) {
@@ -125,6 +132,32 @@ sub dbh {
 
     $handles->{$dbname} = $db;
     return $db;
+}
+
+=head2 wal($db)
+
+Sets the journal mode of the handle C<$db> to WAL, and returns 1.  When another
+connection holds a write lock, SQLite fails the change at once with
+C<SQLITE_BUSY> and does not wait for C<busy_timeout>.  So this tries again
+every C<$WAL_DELAY> seconds, for as long as C<$BUSY_TIMEOUT> says.  Dies with
+the last error when the lock outlasts that, and at once on any other error.
+
+=cut
+
+sub wal {
+    my ($db) = @_;
+
+    my $error;
+    retry(
+        1 + int( $BUSY_TIMEOUT / 1000 / $WAL_DELAY ),
+        $WAL_DELAY,
+        sub { $db->do('PRAGMA journal_mode = WAL') },
+
+        # retry dies after its last try only with its default retry_if, so this keeps the error.
+        sub { $error = $@; return $error && ( $db->err // 0 ) == SQLITE_BUSY },
+    );
+    die $error if $error;
+    return 1;
 }
 
 =head2 apply($db, $file)
