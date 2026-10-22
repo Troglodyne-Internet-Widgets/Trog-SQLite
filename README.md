@@ -4,7 +4,7 @@ Trog::SQLite - An SQLite handle with its schema applied, its updates run, and it
 
 # VERSION
 
-version 0.002
+version 0.003
 
 # SYNOPSIS
 
