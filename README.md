@@ -4,7 +4,7 @@ Trog::SQLite - An SQLite handle with its schema applied, its updates run, and it
 
 # VERSION
 
-version 0.001
+version 0.002
 
 # SYNOPSIS
 
@@ -73,7 +73,8 @@ The handle has `RaiseError` on, and these pragmas:
 - `busy_timeout = 5000`, so that a second process waits for five seconds
 for a lock rather than failing at once with `database is locked`.
 - `journal_mode = WAL` and `synchronous = NORMAL`, so that readers do
-not block a writer.
+not block a writer.  SQLite does not wait for a lock to change the journal
+mode, so `wal` tries again for as long as `busy_timeout` waits.
 - `foreign_keys = ON`, set after the updates.
 
 The handle is cached for the rest of the process.  A second call for the same
@@ -81,6 +82,14 @@ The handle is cached for the rest of the process.  A second call for the same
 
 Do not call this during `BEGIN` or outside a sub.  A handle must not outlive a
 fork, so a forked child calls `forget` before it calls this.
+
+## wal($db)
+
+Sets the journal mode of the handle `$db` to WAL, and returns 1.  When another
+connection holds a write lock, SQLite fails the change at once with
+`SQLITE_BUSY` and does not wait for `busy_timeout`.  So this tries again
+every `$WAL_DELAY` seconds, for as long as `$BUSY_TIMEOUT` says.  Dies with
+the last error when the lock outlasts that, and at once on any other error.
 
 ## apply($db, $file)
 
