@@ -316,6 +316,38 @@ sub forget {
     return 1;
 }
 
+=head2 transaction($db, $work)
+
+Runs the sub C<$work> in one transaction on the handle C<$db>, and returns 1.
+If C<$work> dies, the transaction is rolled back, and this dies with the error
+of C<$work>.
+
+If C<$db> is already in a transaction, C<$work> runs in that one, and the code
+that began it commits it or rolls it back.  So a sub that needs a transaction
+can call this whether or not its caller began one.
+
+=cut
+
+sub transaction {
+    my ( $db, $work ) = @_;
+
+    # begin_work dies rather than nest.
+    if ( !$db->{AutoCommit} ) {
+        $work->();
+        return 1;
+    }
+
+    $db->begin_work();
+    my $ok = eval { $work->(); $db->commit(); 1 };
+    unless ($ok) {
+        my $err = $@ || "The transaction failed\n";
+        eval { $db->rollback() };    ## no critic (ErrorHandling::RequireCheckingReturnValueOfEval) -- report $err, not a failed rollback after it
+        die $err;
+    }
+
+    return 1;
+}
+
 =head2 bulk_insert($dbh, $table, \@keys, $action, @values)
 
 Inserts C<@values> into the columns C<@keys> of C<$table>, and returns 1.
