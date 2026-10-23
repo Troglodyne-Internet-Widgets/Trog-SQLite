@@ -4,7 +4,7 @@ Trog::SQLite - An SQLite handle with its schema applied, its updates run, and it
 
 # VERSION
 
-version 0.003
+version 0.004
 
 # SYNOPSIS
 
@@ -122,6 +122,16 @@ update then changes nothing.
 
 Drops the cached handles and returns 1.  A forked child calls this so that it
 opens its own handle and does not use the handle of its parent.
+
+## transaction($db, $work)
+
+Runs the sub `$work` in one transaction on the handle `$db`, and returns 1.
+If `$work` dies, the transaction is rolled back, and this dies with the error
+of `$work`.
+
+If `$db` is already in a transaction, `$work` runs in that one, and the code
+that began it commits it or rolls it back.  So a sub that needs a transaction
+can call this whether or not its caller began one.
 
 ## bulk\_insert($dbh, $table, \\@keys, $action, @values)
 
