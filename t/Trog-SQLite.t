@@ -154,6 +154,33 @@ subtest 'dbh: a forked child that forgets its handles leaves the parent alone' =
     );
 };
 
+subtest 'dbh: a forked child gets its own handle without calling forget' => sub {
+    Trog::SQLite::forget();
+    my ( $schema, $file ) = schema_dir($V0);
+    my $db = Trog::SQLite::dbh( $schema, $file );
+
+    pipe( my $said_r, my $said_w ) or die "pipe: $!";
+    my $pid = fork() // die "fork: $!";
+    if ( !$pid ) {
+        close($said_r) or POSIX::_exit(1);
+        my $own   = Trog::SQLite::dbh( $schema, $file );
+        my $ok    = eval { $own->do(q{INSERT INTO things (name) VALUES ('from the child')}); 1 };
+        my $again = Trog::SQLite::dbh( $schema, $file );
+        print {$said_w} ( $own == $db ? 'the parent handle' : 'a new handle' ), ( $again == $own ? ', cached' : ', not cached' ), ( $ok ? ', and wrote' : ", and failed: $@" ), "\n";
+        close($said_w) or POSIX::_exit(1);
+        POSIX::_exit(0);
+    }
+    close($said_w) or die "close: $!";
+    my $said = <$said_r> // 'nothing';
+    waitpid( $pid, 0 );
+    chomp $said;
+
+    is( $said,                                              'a new handle, cached, and wrote', 'the child opens its own handle, caches it, and writes with it' );
+    is( Trog::SQLite::dbh( $schema, $file ),                $db,                               'the parent keeps its own' );
+    is( $db->selectcol_arrayref('SELECT name FROM things'), ['from the child'],                'and sees what the child wrote' );
+    is( $db->selectrow_array('PRAGMA integrity_check'),     'ok',                              'in a database that is intact' );
+};
+
 subtest 'dbh: integrity_check refuses a damaged database' => sub {
     Trog::SQLite::forget();
     my ( $schema, $file ) = schema_dir($V0);

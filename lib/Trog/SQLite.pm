@@ -109,8 +109,11 @@ The handle is cached for the rest of the process.  A second call for the same
 C<$dbname> returns the cached handle, and does not apply C<$schema> again or
 check the database again.  A handle that fails its check is not cached.
 
-Do not call this during C<BEGIN> or outside a sub.  A handle must not outlive a
-fork, so a forked child calls C<forget> before it calls this.
+Do not call this during C<BEGIN> or outside a sub.
+
+A handle must not outlive a fork.  The cache remembers the process that it
+belongs to, so a forked child that calls this gets a new handle of its own,
+and the parent keeps its handle.  The child does not need to call C<forget>.
 
 The handle has C<AutoInactiveDestroy> on, so a forked child that drops it, or
 exits, does not close it.  Otherwise L<DBI> would roll back an open transaction of
@@ -119,8 +122,10 @@ that it already wrote to the WAL.
 
 =cut
 
-# The handle cache, keyed by database file.  A forked child inherits it.
+# The handle cache, keyed by database file, and the process it belongs to.  A
+# forked child inherits both, and dbh empties the cache when the process differs.
 my $handles = {};
+my $owner   = $$;
 
 # How long a statement waits for a lock, in milliseconds, and how long wal
 # waits between its tries, in seconds.
@@ -136,6 +141,7 @@ sub dbh {
     my @unknown = grep { !$OPTIONS{$_} } sort keys %$options;
     die "dbh has no option @unknown\n" if @unknown;
 
+    forget()                   if $owner != $$;
     return $handles->{$dbname} if $handles->{$dbname};
 
     # No touch first, because DBD::SQLite creates the file on connect.
@@ -351,13 +357,14 @@ sub update {
 
 =head2 forget()
 
-Drops the cached handles and returns 1.  A forked child calls this so that it
-opens its own handle and does not use the handle of its parent.
+Drops the cached handles and returns 1, so that the next C<dbh> for each file
+opens a new handle.  C<dbh> calls this itself in a forked child.
 
 =cut
 
 sub forget {
     $handles = {};
+    $owner   = $$;
     return 1;
 }
 
