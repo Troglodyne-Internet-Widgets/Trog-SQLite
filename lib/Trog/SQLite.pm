@@ -139,7 +139,7 @@ sub dbh {
     $options //= {};
     die "The options of dbh must be a HASH reference\n" unless ref $options eq 'HASH';
     my @unknown = grep { !$OPTIONS{$_} } sort keys %$options;
-    die "dbh has no option @unknown\n" if @unknown;
+    die "dbh has no option(s) @unknown\n" if @unknown;
 
     forget()                   if $owner != $$;
     return $handles->{$dbname} if $handles->{$dbname};

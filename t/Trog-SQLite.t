@@ -204,8 +204,8 @@ subtest 'dbh: integrity_check refuses a damaged database' => sub {
     my ( $good_schema, $good ) = schema_dir($V0);
     ok( Trog::SQLite::dbh( $good_schema, $good, { integrity_check => 1 } ), 'and opens a database that passes' );
 
-    like( dies { Trog::SQLite::dbh( $good_schema, $good, { integrity_chek => 1 } ) }, qr/no[ ]option[ ]integrity_chek/, 'an option it does not know is refused' );
-    like( dies { Trog::SQLite::dbh( $good_schema, $good, [] ) },                      qr/HASH[ ]reference/,             'and so are options that are not a hash' );
+    like( dies { Trog::SQLite::dbh( $good_schema, $good, { integrity_chek => 1 } ) }, qr/no[ ]option\(s\)[ ]integrity_chek/, 'an option it does not know is refused' );
+    like( dies { Trog::SQLite::dbh( $good_schema, $good, [] ) },                      qr/HASH[ ]reference/,                  'and so are options that are not a hash' );
 };
 
 subtest 'dbh: each update once, in order, on a new database and on an old one' => sub {
