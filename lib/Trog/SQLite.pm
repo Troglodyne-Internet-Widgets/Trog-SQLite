@@ -70,12 +70,25 @@ C<PRAGMA foreign_key_check> must report nothing, or the update is rolled back.
 
 =head1 FUNCTIONS
 
-=head2 dbh($schema, $dbname)
+=head2 dbh($schema, $dbname, \%options)
 
 Returns a handle to the database in the file C<$dbname>, which is made if it
 does not exist.  If you give C<$schema>, its DDL and its updates are applied
 first, as L</Schema updates> says.  Omit C<$schema> for a database that already
 has its schema.
+
+C<%options> is optional.  It has one key:
+
+=over 4
+
+=item * C<integrity_check>: when true, run C<integrity_check> on the database
+before the schema, and die if the check fails.  The check reads every page, so
+it takes as long as the database is large, and it is off unless you ask.
+
+=back
+
+Dies if C<\%options> is not a hash reference, or has a key that is not listed
+here.
 
 The handle has C<RaiseError> on, and these pragmas:
 
@@ -93,7 +106,8 @@ mode, so C<wal> tries again for as long as C<busy_timeout> waits.
 =back
 
 The handle is cached for the rest of the process.  A second call for the same
-C<$dbname> returns the cached handle, and does not apply C<$schema> again.
+C<$dbname> returns the cached handle, and does not apply C<$schema> again or
+check the database again.  A handle that fails its check is not cached.
 
 Do not call this during C<BEGIN> or outside a sub.  A handle must not outlive a
 fork, so a forked child calls C<forget> before it calls this.
@@ -113,8 +127,15 @@ my $handles = {};
 our $BUSY_TIMEOUT = 5000;
 our $WAL_DELAY    = 0.05;
 
+my %OPTIONS = ( integrity_check => 1 );
+
 sub dbh {
-    my ( $schema, $dbname ) = @_;
+    my ( $schema, $dbname, $options ) = @_;
+    $options //= {};
+    die "The options of dbh must be a HASH reference\n" unless ref $options eq 'HASH';
+    my @unknown = grep { !$OPTIONS{$_} } sort keys %$options;
+    die "dbh has no option @unknown\n" if @unknown;
+
     return $handles->{$dbname} if $handles->{$dbname};
 
     # No touch first, because DBD::SQLite creates the file on connect.
@@ -123,6 +144,9 @@ sub dbh {
     # Before the schema, because a second process that opens a new database at
     # the same time must wait for the updates of the first one.
     $db->do("PRAGMA busy_timeout = $BUSY_TIMEOUT");
+
+    # Before the schema and the journal mode, so that a damaged file is not written to.
+    integrity_check($db) if $options->{integrity_check};
     wal($db);
     $db->do('PRAGMA synchronous = NORMAL');
 
@@ -163,6 +187,22 @@ sub wal {
     );
     die $error if $error;
     return 1;
+}
+
+=head2 integrity_check($db)
+
+Runs C<PRAGMA integrity_check> on the handle C<$db>, and returns 1 if it
+reports C<ok>.  Otherwise dies with the name of the file and every problem that
+the check reported, one on each line.
+
+=cut
+
+sub integrity_check {
+    my ($db) = @_;
+
+    my @problems = map { $_->[0] } @{ $db->selectall_arrayref('PRAGMA integrity_check') };
+    return 1 if "@problems" eq 'ok';
+    die 'The integrity check of ' . $db->sqlite_db_filename() . " failed:\n" . join( "\n", @problems ) . "\n";
 }
 
 =head2 apply($db, $file)
