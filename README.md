@@ -4,7 +4,7 @@ Trog::SQLite - An SQLite handle with its schema applied, its updates run, and it
 
 # VERSION
 
-version 0.004
+version 0.005
 
 # SYNOPSIS
 
@@ -61,12 +61,21 @@ update can rebuild a table that other tables refer to.  After each update,
 
 # FUNCTIONS
 
-## dbh($schema, $dbname)
+## dbh($schema, $dbname, \\%options)
 
 Returns a handle to the database in the file `$dbname`, which is made if it
 does not exist.  If you give `$schema`, its DDL and its updates are applied
 first, as ["Schema updates"](#schema-updates) says.  Omit `$schema` for a database that already
 has its schema.
+
+`%options` is optional.  It has one key:
+
+- `integrity_check`: when true, run `integrity_check` on the database
+before the schema, and die if the check fails.  The check reads every page, so
+it takes as long as the database is large, and it is off unless you ask.
+
+Dies if `\%options` is not a hash reference, or has a key that is not listed
+here.
 
 The handle has `RaiseError` on, and these pragmas:
 
@@ -78,10 +87,19 @@ mode, so `wal` tries again for as long as `busy_timeout` waits.
 - `foreign_keys = ON`, set after the updates.
 
 The handle is cached for the rest of the process.  A second call for the same
-`$dbname` returns the cached handle, and does not apply `$schema` again.
+`$dbname` returns the cached handle, and does not apply `$schema` again or
+check the database again.  A handle that fails its check is not cached.
 
-Do not call this during `BEGIN` or outside a sub.  A handle must not outlive a
-fork, so a forked child calls `forget` before it calls this.
+Do not call this during `BEGIN` or outside a sub.
+
+A handle must not outlive a fork.  The cache remembers the process that it
+belongs to, so a forked child that calls this gets a new handle of its own,
+and the parent keeps its handle.  The child does not need to call `forget`.
+
+The handle has `AutoInactiveDestroy` on, so a forked child that drops it, or
+exits, does not close it.  Otherwise [DBI](https://metacpan.org/pod/DBI) would roll back an open transaction of
+the parent from the child, and SQLite can lose the pages of that transaction
+that it already wrote to the WAL.
 
 ## wal($db)
 
@@ -90,6 +108,12 @@ connection holds a write lock, SQLite fails the change at once with
 `SQLITE_BUSY` and does not wait for `busy_timeout`.  So this tries again
 every `$WAL_DELAY` seconds, for as long as `$BUSY_TIMEOUT` says.  Dies with
 the last error when the lock outlasts that, and at once on any other error.
+
+## integrity\_check($db)
+
+Runs `PRAGMA integrity_check` on the handle `$db`, and returns 1 if it
+reports `ok`.  Otherwise dies with the name of the file and every problem that
+the check reported, one on each line.
 
 ## apply($db, $file)
 
@@ -120,8 +144,8 @@ update then changes nothing.
 
 ## forget()
 
-Drops the cached handles and returns 1.  A forked child calls this so that it
-opens its own handle and does not use the handle of its parent.
+Drops the cached handles and returns 1, so that the next `dbh` for each file
+opens a new handle.  `dbh` calls this itself in a forked child.
 
 ## transaction($db, $work)
 
