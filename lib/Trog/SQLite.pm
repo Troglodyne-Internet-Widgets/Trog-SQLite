@@ -98,6 +98,11 @@ C<$dbname> returns the cached handle, and does not apply C<$schema> again.
 Do not call this during C<BEGIN> or outside a sub.  A handle must not outlive a
 fork, so a forked child calls C<forget> before it calls this.
 
+The handle has C<AutoInactiveDestroy> on, so a forked child that drops it, or
+exits, does not close it.  Otherwise L<DBI> would roll back an open transaction of
+the parent from the child, and SQLite can lose the pages of that transaction
+that it already wrote to the WAL.
+
 =cut
 
 # The handle cache, keyed by database file.  A forked child inherits it.
@@ -113,7 +118,7 @@ sub dbh {
     return $handles->{$dbname} if $handles->{$dbname};
 
     # No touch first, because DBD::SQLite creates the file on connect.
-    my $db = DBI->connect( "dbi:SQLite:dbname=$dbname", q{}, q{}, { RaiseError => 1, PrintError => 0 } );
+    my $db = DBI->connect( "dbi:SQLite:dbname=$dbname", q{}, q{}, { RaiseError => 1, PrintError => 0, AutoInactiveDestroy => 1 } );
 
     # Before the schema, because a second process that opens a new database at
     # the same time must wait for the updates of the first one.

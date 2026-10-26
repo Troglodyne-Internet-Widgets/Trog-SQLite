@@ -122,6 +122,38 @@ subtest 'dbh: an error other than a lock is not tried again' => sub {
     cmp_ok( Time::HiRes::time() - $start, '<', 1, 'at once, not after the busy timeout' );
 };
 
+subtest 'dbh: a forked child that forgets its handles leaves the parent alone' => sub {
+    Trog::SQLite::forget();
+    my ( $schema, $file ) = schema_dir("$V0\nCREATE TABLE IF NOT EXISTS blobs (b BLOB);");
+    my $db = Trog::SQLite::dbh( $schema, $file );
+
+    # A cache this small makes the transaction write its pages to the WAL before
+    # the fork, which is when a rollback from the child can undo them.
+    $db->do('PRAGMA cache_size = 2');
+    $db->begin_work();
+    $db->do(q{INSERT INTO things (name) VALUES ('before the fork')});
+    $db->do('INSERT INTO blobs (b) VALUES (randomblob(4000))') for 1 .. 500;
+
+    my $pid = fork() // die "fork: $!";
+    if ( !$pid ) {
+
+        # Its last reference, so the handle is destroyed here, in the child.
+        Trog::SQLite::forget();
+        undef $db;
+        POSIX::_exit(0);
+    }
+    waitpid( $pid, 0 );
+
+    $db->do(q{INSERT INTO things (name) VALUES ('after the fork')});
+    $db->commit();
+    is( $db->selectrow_array('PRAGMA integrity_check'), 'ok', 'the database is intact' );
+    is(
+        $db->selectcol_arrayref('SELECT name FROM things ORDER BY name'),
+        [ 'after the fork', 'before the fork' ],
+        'and the parent commits all of its transaction'
+    );
+};
+
 subtest 'dbh: each update once, in order, on a new database and on an old one' => sub {
     Trog::SQLite::forget();
     my ( $schema, $file ) = schema_dir( $V0, 2 => $V2, 1 => $V1 );
