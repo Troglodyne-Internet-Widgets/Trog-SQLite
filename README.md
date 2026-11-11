@@ -4,7 +4,7 @@ Trog::SQLite - An SQLite handle with its schema applied, its updates run, and it
 
 # VERSION
 
-version 0.005
+version 0.006
 
 # SYNOPSIS
 
@@ -157,6 +157,38 @@ If `$db` is already in a transaction, `$work` runs in that one, and the code
 that began it commits it or rolls it back.  So a sub that needs a transaction
 can call this whether or not its caller began one.
 
+## do\_with\_update\_hook($db, $hook, $sql, @bind)
+
+Runs `$sql` with `@bind` on the handle `$db`, with the sub `$hook` as its
+update hook, and returns what `do` returns.  Then it puts back the update hook
+that `$db` had before, also when `$sql` dies, and dies with that error.
+
+SQLite calls `$hook` once for each row that the statement inserts, updates or
+deletes, in any table, with four arguments: the action, which is
+`SQLITE_INSERT`, `SQLITE_UPDATE` or `SQLITE_DELETE` from
+[DBD::SQLite::Constants](https://metacpan.org/pod/DBD%3A%3ASQLite%3A%3AConstants), the name of the database, the name of the table, and
+the `rowid` of the row.  See `sqlite_update_hook` in [DBD::SQLite](https://metacpan.org/pod/DBD%3A%3ASQLite).
+
+Use it to count the rows that a write through a view writes.  A view with
+`INSTEAD OF` triggers takes writes, but SQLite does not count the rows that a
+trigger writes, so `do` returns `0E0` for every write through the view.  The
+update hook reports each of those rows, with its table:
+
+```perl
+my $rows = 0;
+Trog::SQLite::do_with_update_hook(
+    $dbh, sub { $rows++ if $_[2] eq 'addresses' },
+    'INSERT OR IGNORE INTO ips (ip, domain) VALUES (?, ?)', $ip, $domain,
+);
+```
+
+SQLite does not call the hook for a table `WITHOUT ROWID`, for a row that
+`REPLACE` deletes to resolve a conflict, or for a `DELETE` with no `WHERE`,
+which it does without visiting the rows.
+
+The hook belongs to the handle, and `dbh` gives every caller in a process the
+same handle for a file.  That is why the one before is put back.
+
 ## bulk\_insert($dbh, $table, \\@keys, $action, @values)
 
 Inserts `@values` into the columns `@keys` of `$table`, and returns 1.
@@ -195,9 +227,10 @@ Current Maintainers:
 
 - George S. Baugh <george@troglodyne.net>
 
-# CONTRIBUTOR
+# CONTRIBUTORS
 
-troglodyne-bot <morpheus@troglodyne.net>
+- troglodyne-bot <morpheus@troglodyne.net>
+- troglodyne-robot <trogbot@troglodyne.net>
 
 # COPYRIGHT AND LICENSE
 
