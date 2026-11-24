@@ -480,7 +480,9 @@ sub bulk_insert {
     my $limit = floor( $db->sqlite_limit(SQLITE_LIMIT_VARIABLE_NUMBER) / $width ) * $width;
 
     # Identifiers quoted, and the action checked against its list above.
-    my $insert = "INSERT OR $action INTO " . $db->quote_identifier($table) . ' (' . join( ',', map { $db->quote_identifier($_) } @$keys ) . ') VALUES ';    ## no critic (ValuesAndExpressions::PreventSQLInjection) -- quoted identifiers, and an action from a fixed list
+    my @columns;
+    foreach my $key (@$keys) { push @columns, $db->quote_identifier($key) }
+    my $insert = "INSERT OR $action INTO " . $db->quote_identifier($table) . ' (' . join( ',', @columns ) . ') VALUES ';    ## no critic (ValuesAndExpressions::PreventSQLInjection) -- quoted identifiers, and an action from a fixed list
     my $tuple  = '(' . join( ',', ('?') x $width ) . ')';
 
     my ( $statement, $prepared_for ) = ( undef, 0 );
