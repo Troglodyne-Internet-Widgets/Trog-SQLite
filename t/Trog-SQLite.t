@@ -1,12 +1,12 @@
-#!/usr/bin/env perl
+#!perl
 use 5.014;
 use strict;
 use warnings FATAL => 'all';
 use re '/aasx';
 
 # Both import by being loaded, which ProhibitUnusedImports cannot see.
-use Test2::V1 -i;                 ## no critic (ProhibitUnusedImports)
-use Test2::Plugin::NoWarnings;    ## no critic (ProhibitUnusedImports)
+use Test2::V1 -i;    ## no critic (ProhibitUnusedImports)
+use Test2::Plugin::NoWarnings;
 use FindBin::libs;
 use File::Temp qw{tempdir};
 use File::Slurper::Temp();
@@ -23,8 +23,10 @@ sub schema_dir {
     my ( $schema, %updates ) = @_;
 
     my $dir = tempdir( CLEANUP => 1 );
-    File::Slurper::Temp::write_text( "$dir/app.sql",            $schema );
-    File::Slurper::Temp::write_text( "$dir/app.v$_.update.sql", $updates{$_} ) for keys %updates;
+    File::Slurper::Temp::write_text( "$dir/app.sql", $schema );
+    foreach my $version ( keys %updates ) {
+        File::Slurper::Temp::write_text( "$dir/app.v$version.update.sql", $updates{$version} );
+    }
 
     return ( "$dir/app.sql", "$dir/app.db" );
 }
@@ -132,7 +134,7 @@ subtest 'dbh: a forked child that forgets its handles leaves the parent alone' =
     $db->do('PRAGMA cache_size = 2');
     $db->begin_work();
     $db->do(q{INSERT INTO things (name) VALUES ('before the fork')});
-    $db->do('INSERT INTO blobs (b) VALUES (randomblob(4000))') for 1 .. 500;
+    $db->do('WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 500) INSERT INTO blobs (b) SELECT randomblob(4000) FROM n');
 
     my $pid = fork() // die "fork: $!";
     if ( !$pid ) {
@@ -187,7 +189,7 @@ subtest 'dbh: integrity_check refuses a damaged database' => sub {
     my $setup = DBI->connect( "dbi:SQLite:dbname=$file", q{}, q{}, { RaiseError => 1, PrintError => 0 } );
     $setup->do($V0);
     $setup->do('CREATE INDEX by_name ON things (name)');
-    $setup->do( 'INSERT INTO things (name) VALUES (?)', undef, "thing $_" ) for 1 .. 20;
+    foreach my $n ( 1 .. 20 ) { $setup->do( 'INSERT INTO things (name) VALUES (?)', undef, "thing $n" ) }
 
     # The index now claims an order that its entries are not in.
     $setup->do('PRAGMA writable_schema = ON');
