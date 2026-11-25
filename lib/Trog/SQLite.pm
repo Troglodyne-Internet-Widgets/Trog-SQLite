@@ -231,7 +231,7 @@ sub apply {
     return 1;
 }
 
-=head2 @updates = updates($schema)
+=head2 updates($schema)
 
 Returns the update files of the schema file C<$schema>, as a list of
 C<[ $version, $path ]> pairs in the order of their versions.  See
@@ -239,6 +239,8 @@ L</Schema updates>.
 
 Dies if the versions have a gap, such as a C<v3> with no C<v2>, because then one
 of the files is misnamed or missing, and running the others would skip it.
+
+    my @updates = updates($schema);
 
 =cut
 
@@ -276,11 +278,13 @@ sub updates {
     return map { [ $_, $path_of{$_} ] } @versions;
 }
 
-=head2 $version = schema_version($db)
+=head2 schema_version($db)
 
 Returns the version of the schema that the database of C<$db> records.  It makes
 the table that records it, with one row and a version of 0, if the database has
 none.
+
+    my $version = schema_version($db);
 
 =cut
 
@@ -308,12 +312,14 @@ SQL
     return $version;
 }
 
-=head2 $version = update($db, $schema)
+=head2 update($db, $schema)
 
 Runs each update of C<$schema> that the database of C<$db> has not run, as
 L</Schema updates> says, and returns the version of the database afterwards.
 C<dbh> calls this.  Dies with the name of the file if an update fails, and that
 update then changes nothing.
+
+    my $version = update($db, $schema);
 
 =cut
 
